@@ -15,13 +15,12 @@
 
 import numpy as np
 import pandas as pd
-import math
 
 
 #初始化函数 
 def initialize(context):
     # 设定基准
-    set_benchmark('513500.XSHG')
+    set_benchmark('159509.XSHE')
     # 用真实价格交易
     set_option('use_real_price', True)
     # 打开防未来函数
@@ -36,7 +35,7 @@ def initialize(context):
     g.etf_pool = [
         '518880.XSHG', #黄金ETF（大宗商品）
         '159509.XSHE', #纳指科技ETF（海外资产）
-        '513500.XSHG', #sp500 
+        #'513500.XSHG', #sp500 
         #'513100.XSHG' #qqq
         #'161128.XSHE'  #sp tech
     ]
@@ -62,38 +61,27 @@ def MOM(etf):
 # 基于年化收益和判定系数打分的动量因子轮动 https://www.joinquant.com/post/26142
 def get_rank(etf_pool):
     score_list = []
-    scores_dict = {}
     for etf in etf_pool:
         score = MOM(etf)
         score_list.append(score)
-        scores_dict[etf] = score
     df = pd.DataFrame(index=etf_pool, data={'score':score_list})
     df = df.sort_values(by='score', ascending=False)
     rank_list = list(df.index)    
-    return rank_list, scores_dict
+    return rank_list
 
 # 交易
 def trade(context):
     # 获取动量最高的一只ETF
     target_num = 1    
-    target_list, scores = get_rank(g.etf_pool)
-    target_list = target_list[:target_num]
-    
-    # 输出动量评分
-    current_time = str(context.current_dt)[:19]  # 获取当前时间，格式：YYYY-MM-DD HH:MM:SS
-    score_texts = []
-    for etf in target_list + [e for e in g.etf_pool if e not in target_list]:
-        score_texts.append(f"{etf}:{scores[etf]:.4f}")
-    print(f"{current_time} - SCORES - " + " | ".join(score_texts))
-    
+    target_list = get_rank(g.etf_pool)[:target_num]
     # 卖出    
     hold_list = list(context.portfolio.positions)
     for etf in hold_list:
         if etf not in target_list:
             order_target_value(etf, 0)
-            print(f'{current_time} - INFO  - 卖出{etf}')
+            print('卖出' + str(etf))
         else:
-            print(f'{current_time} - INFO  - 继续持有{etf}')
+            print('继续持有' + str(etf))
             pass
     # 买入
     hold_list = list(context.portfolio.positions)
@@ -102,5 +90,5 @@ def trade(context):
         for etf in target_list:
             if context.portfolio.positions[etf].total_amount == 0:
                 order_target_value(etf, value)
-                print(f'{current_time} - INFO  - 买入{etf}')
+                print('买入' + str(etf))
 

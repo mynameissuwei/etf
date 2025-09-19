@@ -21,9 +21,10 @@ class LocalETFStrategy:
         self.data_dir = data_dir
         # ETF池配置 - 对应我们获取的数据
         self.etf_config = {
-            '518880': {'name': '黄金ETF', 'file': '518880_data.csv'},
+            # '518880': {'name': '黄金ETF', 'file': '518880_data.csv'},
             '159509': {'name': '纳指科技ETF', 'file': '159509_data.csv'}, 
-            '513500': {'name': '中概ETF', 'file': '513500_data.csv'}
+            # '513500': {'name': '中概ETF', 'file': '513500_data.csv'},
+            '161116': {'name': '易方达黄金ETF', 'file': '161116_data.csv'}
         }
         
         # 策略参数
@@ -102,49 +103,35 @@ class LocalETFStrategy:
     
     def MOM(self, etf_code, end_date):
         """
-        计算动量因子
-        综合年化收益率（趋势强度）和R²（趋势稳定性）
+        计算动量因子 - 完全按照聚宽stock.py的逻辑
         """
         try:
             df = self.etf_data[etf_code]
             
             # 获取指定日期前m_days天的数据
             end_date = pd.to_datetime(end_date)
-            start_date = end_date - timedelta(days=self.m_days*2)  # 多取一些确保有足够数据
             
-            mask = (df.index <= end_date) & (df.index >= start_date)
+            # 模拟聚宽attribute_history: 获取end_date之前的25个交易日（不包括end_date）
+            mask = df.index < end_date  # 注意这里是 < 不是 <=
             price_data = df.loc[mask, 'close'].tail(self.m_days)
             
             if len(price_data) < self.m_days:
-                print(f"警告：{etf_code} 数据不足，实际{len(price_data)}天，需要{self.m_days}天")
                 return -999  # 返回极低分数
-            
-            # 对数收益率
+                   
+            # 完全按照聚宽stock.py的MOM函数逻辑
             y = np.log(price_data.values)
-            n = len(y)
+            n = len(y)  
             x = np.arange(n)
-            
-            # 线性增加权重（最新数据权重更高）
-            weights = np.linspace(1, 2, n)
-            
-            # 加权线性回归
+            weights = np.linspace(1, 2, n)  # 线性增加权重
             slope, intercept = np.polyfit(x, y, 1, w=weights)
-            
-            # 年化收益率
             annualized_returns = math.pow(math.exp(slope), 250) - 1
-            
-            # 计算R²（拟合优度）
-            y_pred = slope * x + intercept
-            residuals = y - y_pred
+            residuals = y - (slope * x + intercept)
             weighted_residuals = weights * residuals**2
-            y_mean = np.average(y, weights=weights)
-            weighted_variance = weights * (y - y_mean)**2
-            
-            r_squared = 1 - (np.sum(weighted_residuals) / np.sum(weighted_variance))
-            r_squared = max(0, min(1, r_squared))  # 限制在[0,1]范围
-            
-            # 综合得分
+            r_squared = 1 - (np.sum(weighted_residuals) / np.sum(weights * (y - np.mean(y))**2))
             score = annualized_returns * r_squared
+            
+            if etf_code == '159509' and end_date.strftime('%Y-%m-%d') == '2025-09-01':
+                print(f"slope={slope:.6f}, r_squared={r_squared:.6f}, score={score:.6f}")
             
             return score
             
@@ -208,57 +195,61 @@ class LocalETFStrategy:
     
     def trade(self, date):
         """
-        执行交易逻辑
+        执行交易逻辑 - 完全模拟聚宽平台逻辑
         """
-        # 获取当前最优ETF
+        # 获取当前最优ETF（只选择得分最高的1只）
         ranked_etfs, scores = self.get_rank(date)
         target_etf = ranked_etfs[0]
-        
-        print(f"\n{date.strftime('%Y-%m-%d')} 交易信号:")
-        for etf, score in scores.items():
-            name = self.etf_config[etf]['name']
-            print(f"  {name}({etf}): {score:.4f}")
         
         # 获取当前持仓
         current_holdings = [etf for etf, pos in self.portfolio['positions'].items() 
                           if pos['shares'] > 0]
         
-        # 卖出逻辑
-        for etf_code in current_holdings:
-            if etf_code != target_etf:
-                # 卖出
-                shares = self.portfolio['positions'][etf_code]['shares']
-                current_price = self.get_current_price(etf_code, date)
-                
-                if current_price and shares > 0:
-                    sell_value = shares * current_price
-                    self.portfolio['cash'] += sell_value
-                    self.portfolio['positions'][etf_code]['shares'] = 0
-                    self.portfolio['positions'][etf_code]['value'] = 0
-                    
-                    name = self.etf_config[etf_code]['name']
-                    print(f"  ✗ 卖出 {name}({etf_code}): {shares:.0f}股, 价值{sell_value:.2f}元")
+        # 判断是否需要交易
+        need_trade = False
+        if len(current_holdings) == 0:
+            # 没有持仓，需要买入
+            need_trade = True
+        elif len(current_holdings) > 0 and target_etf not in current_holdings:
+            # 当前持仓不是最优ETF，需要切换
+            need_trade = True
         
-        # 买入逻辑
-        if target_etf not in current_holdings:
-            # 买入目标ETF
-            current_price = self.get_current_price(target_etf, date)
+        if need_trade:
+            print(f"\n{date.strftime('%Y-%m-%d')} 交易信号:")
+            for etf, score in scores.items():
+                name = self.etf_config[etf]['name']
+                print(f"  {name}({etf}): {score:.4f}")
             
-            if current_price and self.portfolio['cash'] > 0:
-                # 用所有现金买入
-                buy_value = self.portfolio['cash']
-                shares = buy_value / current_price
+            # 卖出所有当前持仓
+            for etf_code in current_holdings:
+                if etf_code != target_etf:
+                    shares = self.portfolio['positions'][etf_code]['shares']
+                    current_price = self.get_current_price(etf_code, date)
+                    
+                    if current_price and shares > 0:
+                        sell_value = shares * current_price
+                        self.portfolio['cash'] += sell_value
+                        self.portfolio['positions'][etf_code]['shares'] = 0
+                        self.portfolio['positions'][etf_code]['value'] = 0
+                        
+                        name = self.etf_config[etf_code]['name']
+                        print(f"  ✗ 卖出 {name}({etf_code}): {shares:.0f}股, 价值{sell_value:.2f}元")
+            
+            # 买入目标ETF
+            if target_etf not in current_holdings or self.portfolio['positions'][target_etf]['shares'] == 0:
+                current_price = self.get_current_price(target_etf, date)
                 
-                self.portfolio['positions'][target_etf]['shares'] = shares
-                self.portfolio['positions'][target_etf]['value'] = buy_value
-                self.portfolio['cash'] = 0
-                
-                name = self.etf_config[target_etf]['name']
-                print(f"  ✓ 买入 {name}({target_etf}): {shares:.0f}股, 价值{buy_value:.2f}元")
-        else:
-            # 继续持有
-            name = self.etf_config[target_etf]['name']
-            print(f"  → 继续持有 {name}({target_etf})")
+                if current_price and self.portfolio['cash'] > 0:
+                    # 用所有现金买入
+                    buy_value = self.portfolio['cash']
+                    shares = buy_value / current_price
+                    
+                    self.portfolio['positions'][target_etf]['shares'] = shares
+                    self.portfolio['positions'][target_etf]['value'] = buy_value
+                    self.portfolio['cash'] = 0
+                    
+                    name = self.etf_config[target_etf]['name']
+                    print(f"  ✓ 买入 {name}({target_etf}): {shares:.0f}股, 价值{buy_value:.2f}元")
     
     def run_backtest(self, start_date=None, end_date=None):
         """
@@ -287,11 +278,10 @@ class LocalETFStrategy:
         print(f"交易日数: {len(trading_dates)}天")
         print(f"初始资金: {self.initial_capital:,.0f}元")
         
-        # 执行回测
+        # 执行回测 - 每天运行交易函数（模拟聚宽的run_daily）
         for i, date in enumerate(trading_dates):
-            # 每10个交易日执行一次交易（降低交易频率）
-            if i % 10 == 0:
-                self.trade(date)
+            # 每天都运行trade函数，但只在需要时才实际交易
+            self.trade(date)
             
             # 更新组合价值
             portfolio_value = self.update_portfolio_value(date)
@@ -365,7 +355,7 @@ def main():
     strategy = LocalETFStrategy()
     
     # 运行回测
-    strategy.run_backtest(start_date='2024-01-01')
+    strategy.run_backtest(start_date='2024-01-01', end_date='2025-09-05')
 
 if __name__ == "__main__":
     main()

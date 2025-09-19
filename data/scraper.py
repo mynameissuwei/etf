@@ -166,6 +166,7 @@ def main():
     sources = [
         ('SZ159509', '159509', 'palmmicro'),
         ('SH513500', '513500', 'palmmicro'), 
+        ('SZ161116', '161116', 'palmmicro'),
         ('518880', '518880', 'eastmoney')
     ]
     
