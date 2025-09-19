@@ -114,6 +114,12 @@ def save_to_csv(data, filename="518880_fund_data.csv"):
                 # Handle different possible field names
                 date = record.get('FSRQ', record.get('净值日期', record.get('date', record.get('x', ''))))
                 nav = record.get('DWJZ', record.get('单位净值', record.get('nav', record.get('y', ''))))
+                
+                # 如果是时间戳格式，直接转换
+                if isinstance(date, (int, float)) and date > 1000000000:
+                    original_timestamp = date
+                    date = datetime.fromtimestamp(date/1000).strftime('%Y-%m-%d')
+                    print(f"时间戳转换: {original_timestamp} -> {date}, 净值: {nav}")
             elif isinstance(record, list) and len(record) >= 2:
                 # Handle array format [timestamp, value] or [date, value]
                 date = record[0]

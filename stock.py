@@ -20,7 +20,7 @@ import pandas as pd
 #初始化函数 
 def initialize(context):
     # 设定基准
-    set_benchmark('513500.XSHG')
+    set_benchmark('159509.XSHE')
     # 用真实价格交易
     set_option('use_real_price', True)
     # 打开防未来函数
@@ -35,7 +35,6 @@ def initialize(context):
     g.etf_pool = [
         '518880.XSHG', #黄金ETF（大宗商品）
         '159509.XSHE', #纳指科技ETF（海外资产）
-        '513500.XSHG', #sp500 
         #'513100.XSHG' #qqq
         #'161128.XSHE'  #sp tech
     ]
