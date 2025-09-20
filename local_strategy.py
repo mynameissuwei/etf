@@ -38,7 +38,8 @@ class LocalETFStrategy:
             'cash': self.initial_capital,
             'positions': {},  # {etf_code: {'shares': 0, 'value': 0}}
             'total_value': self.initial_capital,
-            'history': []  # 记录每日组合价值
+            'history': [],  # 记录每日组合价值
+            'trades': []  # 记录交易记录
         }
         
         self.load_data()
@@ -232,6 +233,17 @@ class LocalETFStrategy:
                         self.portfolio['positions'][etf_code]['shares'] = 0
                         self.portfolio['positions'][etf_code]['value'] = 0
                         
+                        # 记录交易
+                        self.portfolio['trades'].append({
+                            'date': date.strftime('%Y-%m-%d'),
+                            'type': 'sell',
+                            'code': etf_code,
+                            'name': self.etf_config[etf_code]['name'],
+                            'shares': shares,
+                            'price': current_price,
+                            'amount': sell_value
+                        })
+                        
                         name = self.etf_config[etf_code]['name']
                         print(f"  ✗ 卖出 {name}({etf_code}): {shares:.0f}股, 价值{sell_value:.2f}元")
             
@@ -247,6 +259,17 @@ class LocalETFStrategy:
                     self.portfolio['positions'][target_etf]['shares'] = shares
                     self.portfolio['positions'][target_etf]['value'] = buy_value
                     self.portfolio['cash'] = 0
+                    
+                    # 记录交易
+                    self.portfolio['trades'].append({
+                        'date': date.strftime('%Y-%m-%d'),
+                        'type': 'buy',
+                        'code': target_etf,
+                        'name': self.etf_config[target_etf]['name'],
+                        'shares': shares,
+                        'price': current_price,
+                        'amount': buy_value
+                    })
                     
                     name = self.etf_config[target_etf]['name']
                     print(f"  ✓ 买入 {name}({target_etf}): {shares:.0f}股, 价值{buy_value:.2f}元")
@@ -344,8 +367,15 @@ class LocalETFStrategy:
         print(f"  现金: {self.portfolio['cash']:.2f}元")
         
         # 保存结果到CSV
-        history_df.to_csv('/home/suwei/回测策略/backtest_results.csv', index=False)
-        print(f"\n详细结果已保存到: /home/suwei/回测策略/backtest_results.csv")
+        history_df.to_csv('/home/suwei/回测策略/analysis_results/backtest_results.csv', index=False)
+        print(f"\n详细结果已保存到: /home/suwei/回测策略/analysis_results/backtest_results.csv")
+        
+        # 保存交易记录到CSV
+        if self.portfolio['trades']:
+            trades_df = pd.DataFrame(self.portfolio['trades'])
+            trades_df.to_csv('/home/suwei/回测策略/analysis_results/trades_record.csv', index=False)
+            print(f"交易记录已保存到: /home/suwei/回测策略/analysis_results/trades_record.csv")
+            print(f"共记录 {len(trades_df)} 笔交易")
 
 def main():
     """
@@ -355,7 +385,7 @@ def main():
     strategy = LocalETFStrategy()
     
     # 运行回测
-    strategy.run_backtest(start_date='2024-01-01', end_date='2025-09-05')
+    strategy.run_backtest(start_date='2024-01-01', end_date='2025-09-19')
 
 if __name__ == "__main__":
     main()
