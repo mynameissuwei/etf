@@ -41,6 +41,10 @@ class LocalETFStrategy:
             'history': [],  # 记录每日组合价值
             'trades': []  # 记录交易记录
         }
+
+        # 保存每日得分及拆分明细
+        self.daily_scores = {}
+        self.daily_score_details = {}
         
         self.load_data()
     
@@ -105,6 +109,16 @@ class LocalETFStrategy:
     def MOM(self, etf_code, end_date):
         """
         计算动量因子 - 完全按照聚宽stock.py的逻辑
+
+        MOM评分计算步骤说明（便于手工验证）：
+        1. 获取end_date之前的25个交易日价格数据（不包括end_date当天）
+        2. 对价格取对数：y = ln(price)
+        3. 创建时间序列：x = [0, 1, 2, ..., 24]
+        4. 创建线性权重：weights = [1.0, 1.04, 1.08, ..., 2.0] （25个值）
+        5. 加权线性回归：y = slope * x + intercept
+        6. 计算年化收益率：annualized_returns = (e^slope)^250 - 1
+        7. 计算加权R平方：r_squared = 1 - 加权残差平方和/加权总平方和
+        8. 最终评分：score = annualized_returns * r_squared
         """
         try:
             df = self.etf_data[etf_code]
@@ -117,44 +131,82 @@ class LocalETFStrategy:
             price_data = df.loc[mask, 'close'].tail(self.m_days)
             
             if len(price_data) < self.m_days:
-                return -999  # 返回极低分数
-                   
-            # 完全按照聚宽stock.py的MOM函数逻辑
+                return -999, {
+                    'score': -999,
+                    'message': '历史数据不足',
+                    'annualized_returns': np.nan,
+                    'r_squared': np.nan,
+                    'slope': np.nan,
+                    'start_price': price_data.iloc[0] if len(price_data) > 0 else np.nan,
+                    'end_price': price_data.iloc[-1] if len(price_data) > 0 else np.nan
+                }
+            
+            # 【步骤详解】完全按照聚宽stock.py的MOM函数逻辑
+            # 步骤1: 对价格取对数
             y = np.log(price_data.values)
-            n = len(y)  
+            n = len(y)  # 应该是25
+            
+            # 步骤2: 创建时间序列 [0, 1, 2, ..., 24]
             x = np.arange(n)
+            
+            # 步骤3: 创建线性权重 [1.0, 1.04, 1.08, ..., 2.0]
             weights = np.linspace(1, 2, n)  # 线性增加权重
+            
+            # 步骤4: 加权线性回归
             slope, intercept = np.polyfit(x, y, 1, w=weights)
+            
+            # 步骤5: 计算年化收益率
             annualized_returns = math.pow(math.exp(slope), 250) - 1
+            
+            # 步骤6: 计算残差和加权R平方
             residuals = y - (slope * x + intercept)
             weighted_residuals = weights * residuals**2
-            r_squared = 1 - (np.sum(weighted_residuals) / np.sum(weights * (y - np.mean(y))**2))
+            weighted_total_variance = weights * (y - np.mean(y))**2
+            r_squared = 1 - (np.sum(weighted_residuals) / np.sum(weighted_total_variance))
+            
+            # 步骤7: 最终评分
             score = annualized_returns * r_squared
             
-            if etf_code == '159509' and end_date.strftime('%Y-%m-%d') == '2025-09-01':
-                print(f"slope={slope:.6f}, r_squared={r_squared:.6f}, score={score:.6f}")
-            
-            return score
-            
+            details = {
+                'score': score,
+                'annualized_returns': annualized_returns,
+                'r_squared': r_squared,
+                'slope': slope,
+                'start_price': float(price_data.iloc[0]),
+                'end_price': float(price_data.iloc[-1])
+            }
+
+            return score, details
+
         except Exception as e:
             print(f"计算{etf_code}动量因子时出错: {e}")
-            return -999
+            return -999, {
+                'score': -999,
+                'message': str(e),
+                'annualized_returns': np.nan,
+                'r_squared': np.nan,
+                'slope': np.nan,
+                'start_price': np.nan,
+                'end_price': np.nan
+            }
     
     def get_rank(self, date):
         """
         获取ETF排名（按动量得分）
         """
         scores = {}
-        
+        score_details = {}
+
         for etf_code in self.etf_data.keys():
-            score = self.MOM(etf_code, date)
+            score, detail = self.MOM(etf_code, date)
             scores[etf_code] = score
-        
+            score_details[etf_code] = detail
+
         # 按得分排序
         ranked_etfs = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-        
+
         # 返回排序后的ETF代码列表
-        return [etf for etf, score in ranked_etfs], scores
+        return [etf for etf, score in ranked_etfs], scores, score_details
     
     def get_current_price(self, etf_code, date):
         """
@@ -199,8 +251,17 @@ class LocalETFStrategy:
         执行交易逻辑 - 完全模拟聚宽平台逻辑
         """
         # 获取当前最优ETF（只选择得分最高的1只）
-        ranked_etfs, scores = self.get_rank(date)
+        ranked_etfs, scores, score_details = self.get_rank(date)
+
+        if not ranked_etfs:
+            print(f"{date.strftime('%Y-%m-%d')} 无可用ETF评分，跳过交易")
+            return
+
         target_etf = ranked_etfs[0]
+
+        # 保存当日的评分数据，用于CSV导出
+        self.daily_scores = scores
+        self.daily_score_details = score_details
         
         # 获取当前持仓
         current_holdings = [etf for etf, pos in self.portfolio['positions'].items() 
@@ -309,13 +370,35 @@ class LocalETFStrategy:
             # 更新组合价值
             portfolio_value = self.update_portfolio_value(date)
             
+            # 获取当前持仓ETF名称
+            current_position = "现金"
+            for etf_code, position in self.portfolio['positions'].items():
+                if position['shares'] > 0:
+                    current_position = f"{self.etf_config[etf_code]['name']}({etf_code})"
+                    break
+            
             # 记录历史
-            self.portfolio['history'].append({
+            history_record = {
                 'date': date,
                 'total_value': portfolio_value,
                 'cash': self.portfolio['cash'],
+                'current_position': current_position,
                 'positions': dict(self.portfolio['positions'])
-            })
+            }
+            
+            # 添加ETF评分数据
+            if hasattr(self, 'daily_scores'):
+                for etf_code, score in self.daily_scores.items():
+                    etf_name = self.etf_config[etf_code]['name']
+                    history_record[f'{etf_name}_评分'] = round(score, 6)
+                    detail = self.daily_score_details.get(etf_code, {}) if hasattr(self, 'daily_score_details') else {}
+                    history_record[f'{etf_name}_年化收益率'] = round(detail.get('annualized_returns', np.nan), 6)
+                    history_record[f'{etf_name}_R平方'] = round(detail.get('r_squared', np.nan), 6)
+                    history_record[f'{etf_name}_斜率'] = round(detail.get('slope', np.nan), 6)
+                    history_record[f'{etf_name}_起始净值'] = round(detail.get('start_price', np.nan), 6)
+                    history_record[f'{etf_name}_结束净值'] = round(detail.get('end_price', np.nan), 6)
+
+            self.portfolio['history'].append(history_record)
         
         # 输出回测结果
         self.print_backtest_results()
@@ -366,8 +449,46 @@ class LocalETFStrategy:
         
         print(f"  现金: {self.portfolio['cash']:.2f}元")
         
-        # 保存结果到CSV
-        history_df.to_csv('/home/suwei/回测策略/analysis_results/backtest_results.csv', index=False)
+        # 保存详细结果到CSV - 只保留用户需要的列，使用中文列名
+        export_columns = {
+            'date': '日期',
+            'total_value': '总市值', 
+            'cash': '现金',
+            'current_position': '当前持仓'
+        }
+        
+        # 添加ETF评分列
+        for etf_code, config in self.etf_config.items():
+            etf_name = config['name']
+            detail_columns = {
+                f'{etf_name}_评分': f'{etf_name}评分',
+                f'{etf_name}_年化收益率': f'{etf_name}年化收益率',
+                f'{etf_name}_R平方': f'{etf_name}R平方',
+                f'{etf_name}_斜率': f'{etf_name}斜率',
+                f'{etf_name}_起始净值': f'{etf_name}起始净值',
+                f'{etf_name}_结束净值': f'{etf_name}结束净值'
+            }
+
+            for col_key, col_name in detail_columns.items():
+                if col_key in history_df.columns:
+                    export_columns[col_key] = col_name
+        
+        # 只导出需要的列并重命名
+        export_df = history_df[list(export_columns.keys())].copy()
+        export_df.rename(columns=export_columns, inplace=True)
+        
+        # 格式化数据
+        export_df['日期'] = history_df['date'].dt.strftime('%Y-%m-%d')
+        export_df['总市值'] = export_df['总市值'].round(2)
+        export_df['现金'] = export_df['现金'].round(2)
+
+        for col in export_df.columns:
+            if col.endswith(('评分', '年化收益率', 'R平方', '斜率')):
+                export_df[col] = pd.to_numeric(export_df[col], errors='coerce').round(6)
+            elif col.endswith('净值'):
+                export_df[col] = pd.to_numeric(export_df[col], errors='coerce').round(4)
+
+        export_df.to_csv('/home/suwei/回测策略/analysis_results/backtest_results.csv', index=False, encoding='utf-8-sig')
         print(f"\n详细结果已保存到: /home/suwei/回测策略/analysis_results/backtest_results.csv")
         
         # 保存交易记录到CSV
