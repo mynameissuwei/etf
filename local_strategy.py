@@ -3,6 +3,7 @@
 """
 本地化ETF轮动策略
 基于原聚宽策略改写，使用本地数据源实现ETF动量轮动
+核心函数为 MOM
 """
 
 import numpy as np
@@ -505,8 +506,9 @@ def main():
     # 创建策略实例
     strategy = LocalETFStrategy()
     
-    # 运行回测
-    strategy.run_backtest(start_date='2024-01-01', end_date='2025-09-19')
+    # 运行回测 - 动态使用当前日期
+    today = datetime.now().strftime('%Y-%m-%d')
+    strategy.run_backtest(start_date='2024-01-01', end_date=today)
 
 if __name__ == "__main__":
     main()
