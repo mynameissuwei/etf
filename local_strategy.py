@@ -22,10 +22,10 @@ class LocalETFStrategy:
         self.data_dir = data_dir
         # ETF池配置 - 对应我们获取的数据
         self.etf_config = {
-            # '518880': {'name': '黄金ETF', 'file': '518880_data.csv'},
+            '518880': {'name': '黄金ETF', 'file': '518880_data.csv'},
             '159509': {'name': '纳指科技ETF', 'file': '159509_data.csv'}, 
             # '513500': {'name': '中概ETF', 'file': '513500_data.csv'},
-            '161116': {'name': '易方达黄金ETF', 'file': '161116_data.csv'}
+            # '161116': {'name': '易方达黄金ETF', 'file': '161116_data.csv'}
         }
         
         # 策略参数
@@ -451,32 +451,40 @@ class LocalETFStrategy:
         print(f"  现金: {self.portfolio['cash']:.2f}元")
         
         # 保存详细结果到CSV - 只保留用户需要的列，使用中文列名
-        export_columns = {
-            'date': '日期',
-            'total_value': '总市值', 
-            'cash': '现金',
-            'current_position': '当前持仓'
-        }
-        
-        # 添加ETF评分列
-        for etf_code, config in self.etf_config.items():
-            etf_name = config['name']
-            detail_columns = {
-                f'{etf_name}_评分': f'{etf_name}评分',
-                f'{etf_name}_年化收益率': f'{etf_name}年化收益率',
-                f'{etf_name}_R平方': f'{etf_name}R平方',
-                f'{etf_name}_斜率': f'{etf_name}斜率',
-                f'{etf_name}_起始净值': f'{etf_name}起始净值',
-                f'{etf_name}_结束净值': f'{etf_name}结束净值'
-            }
+        base_columns = [
+            ('date', '日期'),
+            ('total_value', '总市值'), 
+            ('cash', '现金'),
+            ('current_position', '当前持仓')
+        ]
 
-            for col_key, col_name in detail_columns.items():
+        metric_order = [
+            ('评分', '评分'),
+            ('年化收益率', '年化收益率'),
+            ('R平方', 'R平方'),
+            ('斜率', '斜率'),
+            ('起始净值', '起始净值'),
+            ('结束净值', '结束净值')
+        ]
+
+        export_columns = []
+
+        for col_key, col_name in base_columns:
+            if col_key in history_df.columns:
+                export_columns.append((col_key, col_name))
+
+        for suffix, suffix_display in metric_order:
+            for etf_code, config in self.etf_config.items():
+                etf_name = config['name']
+                col_key = f'{etf_name}_{suffix}'
                 if col_key in history_df.columns:
-                    export_columns[col_key] = col_name
-        
+                    export_columns.append((col_key, f'{etf_name}{suffix_display}'))
+
         # 只导出需要的列并重命名
-        export_df = history_df[list(export_columns.keys())].copy()
-        export_df.rename(columns=export_columns, inplace=True)
+        selected_keys = [col_key for col_key, _ in export_columns]
+        export_df = history_df[selected_keys].copy()
+        rename_map = {col_key: col_name for col_key, col_name in export_columns}
+        export_df.rename(columns=rename_map, inplace=True)
         
         # 格式化数据
         export_df['日期'] = history_df['date'].dt.strftime('%Y-%m-%d')
