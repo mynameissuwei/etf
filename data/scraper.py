@@ -54,7 +54,44 @@ def scrape_eastmoney_data(code):
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
         }
-        
+
+        # 先尝试ETF/LOF的日K线接口，以获取更准确的收盘价
+        print(f"尝试东方财富K线接口获取{code}收盘价...")
+        market_prefix = '1' if code.startswith(('5', '6')) else '0'
+        kline_url = (
+            f"https://push2his.eastmoney.com/api/qt/stock/kline/get?secid={market_prefix}.{code}"
+            "&fields1=f1,f2,f3,f4&fields2=f51,f52,f53,f54,f55,f56,f57,f58"
+            "&klt=101&fqt=0&end=20500101&lmt=600"
+        )
+
+        kline_resp = requests.get(kline_url, headers=headers, timeout=30)
+        if kline_resp.status_code == 200:
+            try:
+                kline_json = kline_resp.json()
+                klines = kline_json.get('data', {}).get('klines')
+                if klines:
+                    data = []
+                    for item in klines:
+                        parts = item.split(',')
+                        if len(parts) >= 3:
+                            date = parts[0].strip()
+                            close_price = parts[2].strip()
+                            try:
+                                close_value = round(float(close_price), 3)
+                            except ValueError:
+                                continue
+                            data.append({
+                                'date': date,
+                                'net_value': close_value,
+                                'code': code
+                            })
+                    if data:
+                        data.sort(key=lambda x: x['date'], reverse=True)
+                        print(f"K线接口成功返回 {len(data)} 条收盘价记录，最新 {data[0]['date']} = {data[0]['net_value']}")
+                        return data
+            except (ValueError, json.JSONDecodeError) as err:
+                print(f"解析K线数据失败: {err}")
+
         # 方法1：天天基金网净值走势数据（主要用于518880等ETF）
         print(f"尝试天天基金网数据获取{code}...")
         ttjj_url = f"http://fund.eastmoney.com/pingzhongdata/{code}.js"
