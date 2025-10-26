@@ -15,7 +15,7 @@ def analyze_holding_periods():
     """分析每个持仓期间的表现"""
 
     # 读取交易记录
-    trades_df = pd.read_csv('analysis_results/trades_record.csv')
+    trades_df = pd.read_csv('analysis_results/trades_record.csv', dtype={'code': str})
     trades_df['date'] = pd.to_datetime(trades_df['date'])
     trades_df = trades_df.sort_values('date')
 
