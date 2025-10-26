@@ -25,18 +25,18 @@ def get_next_n_trading_days(data, start_date, n_days):
 
 def calculate_switch_performance(days=15):
     """计算每次切换后N个交易日的表现对比"""
-    
+
     # 读取交易记录
-    trades_df = pd.read_csv('/home/suwei/回测策略/analysis_results/trades_record.csv')
+    trades_df = pd.read_csv('analysis_results/trades_record.csv')
     trades_df['date'] = pd.to_datetime(trades_df['date'])
-    
+
     # 读取价格数据
-    data_159509 = pd.read_csv('/home/suwei/回测策略/data/159509_data.csv')
+    data_159509 = pd.read_csv('data/159509_data.csv')
     data_159509['date'] = pd.to_datetime(data_159509['date'])
     data_159509 = data_159509.sort_values('date').set_index('date')
     data_159509.rename(columns={'net_value': 'close'}, inplace=True)
-    
-    data_161116 = pd.read_csv('/home/suwei/回测策略/data/161116_data.csv')
+
+    data_161116 = pd.read_csv('data/161116_data.csv')
     data_161116['date'] = pd.to_datetime(data_161116['date'])
     data_161116 = data_161116.sort_values('date').set_index('date')
     data_161116.rename(columns={'net_value': 'close'}, inplace=True)
@@ -178,7 +178,7 @@ def generate_formatted_output(days=15):
     print(f"策略选择正确率: {correct_choices}/{len(results_df)} = {choice_accuracy:.1f}%")
     
     # 保存详细结果
-    results_df.to_csv(f'/home/suwei/回测策略/analysis_results/switch_{days}d_performance.csv', index=False)
+    results_df.to_csv(f'analysis_results/switch_{days}d_performance.csv', index=False)
     print(f"\n详细结果已保存到: analysis_results/switch_{days}d_performance.csv")
     
     return results_df
