@@ -13,19 +13,19 @@ warnings.filterwarnings('ignore')
 
 def analyze_holding_periods():
     """分析每个持仓期间的表现"""
-    
+
     # 读取交易记录
-    trades_df = pd.read_csv('/home/suwei/回测策略/analysis_results/trades_record.csv')
+    trades_df = pd.read_csv('analysis_results/trades_record.csv', dtype={'code': str})
     trades_df['date'] = pd.to_datetime(trades_df['date'])
     trades_df = trades_df.sort_values('date')
-    
+
     # 读取数据
-    data_159509 = pd.read_csv('/home/suwei/回测策略/data/159509_data.csv')
+    data_159509 = pd.read_csv('data/159509_data.csv')
     data_159509['date'] = pd.to_datetime(data_159509['date'])
     data_159509 = data_159509.sort_values('date').set_index('date')
     data_159509.rename(columns={'net_value': 'close'}, inplace=True)
-    
-    data_161116 = pd.read_csv('/home/suwei/回测策略/data/161116_data.csv')
+
+    data_161116 = pd.read_csv('data/161116_data.csv')
     data_161116['date'] = pd.to_datetime(data_161116['date'])
     data_161116 = data_161116.sort_values('date').set_index('date')
     data_161116.rename(columns={'net_value': 'close'}, inplace=True)
@@ -150,7 +150,7 @@ def main():
         print(f"  超额收益: {worst_period['超额收益']}")
     
     # 保存结果
-    periods_df.to_csv('/home/suwei/回测策略/analysis_results/holding_periods_analysis.csv', index=False, encoding='utf-8-sig')
+    periods_df.to_csv('analysis_results/holding_periods_analysis.csv', index=False, encoding='utf-8-sig')
     print(f"\n详细结果已保存到: analysis_results/holding_periods_analysis.csv")
     
     return periods_df

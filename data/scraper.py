@@ -225,7 +225,7 @@ def main():
             
             # 为每个基金单独保存CSV文件
             df = pd.DataFrame(data)
-            df.to_csv(f'/home/suwei/回测策略/data/{code}_data.csv', index=False, encoding='utf-8-sig')
+            df.to_csv(f'{code}_data.csv', index=False, encoding='utf-8-sig')
             print(f"已保存 {code} 数据到 {code}_data.csv")
         else:
             print(f"未能获取 {code} 的数据")
@@ -234,7 +234,7 @@ def main():
     if all_data:
         df_all = pd.DataFrame(all_data)
         df_all = df_all.sort_values(['code', 'date'])
-        df_all.to_csv('/home/suwei/回测策略/data/all_funds_data.csv', index=False, encoding='utf-8-sig')
+        df_all.to_csv('all_funds_data.csv', index=False, encoding='utf-8-sig')
         print(f"已保存所有数据到 all_funds_data.csv，共 {len(all_data)} 条记录")
     else:
         print("未获取到任何数据")

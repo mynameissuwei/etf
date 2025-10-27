@@ -497,14 +497,14 @@ class LocalETFStrategy:
             elif col.endswith('净值'):
                 export_df[col] = pd.to_numeric(export_df[col], errors='coerce').round(4)
 
-        export_df.to_csv('/home/suwei/回测策略/analysis_results/backtest_results.csv', index=False, encoding='utf-8-sig')
-        print(f"\n详细结果已保存到: /home/suwei/回测策略/analysis_results/backtest_results.csv")
-        
+        export_df.to_csv('analysis_results/backtest_results.csv', index=False, encoding='utf-8-sig')
+        print(f"\n详细结果已保存到: analysis_results/backtest_results.csv")
+
         # 保存交易记录到CSV
         if self.portfolio['trades']:
             trades_df = pd.DataFrame(self.portfolio['trades'])
-            trades_df.to_csv('/home/suwei/回测策略/analysis_results/trades_record.csv', index=False)
-            print(f"交易记录已保存到: /home/suwei/回测策略/analysis_results/trades_record.csv")
+            trades_df.to_csv('analysis_results/trades_record.csv', index=False)
+            print(f"交易记录已保存到: analysis_results/trades_record.csv")
             print(f"共记录 {len(trades_df)} 笔交易")
 
 def main():
