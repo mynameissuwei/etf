@@ -3,15 +3,22 @@ import numpy as np
 from datetime import datetime
 from collections import defaultdict
 
+WINDOWS = [5, 10, 20]
+
 # 读取CSV文件
 file_path = '/home/suwei/回测策略/__pycache__/csv_analyze/fundhistoryd2f310d6c26b8b9189bc4a307d2bd0e6 (3).csv'
 df = pd.read_csv(file_path, header=None, names=['date', 'nav', 'premium'])
 
 # 转换日期格式
 df['date'] = pd.to_datetime(df['date'])
+df['nav'] = pd.to_numeric(df['nav'], errors='coerce')
+df['premium'] = pd.to_numeric(df['premium'], errors='coerce')
 
 # 按日期升序排列（从最早到最新）
-df = df.sort_values('date').reset_index(drop=True)
+df = df.sort_values('date').dropna(subset=['nav', 'premium']).reset_index(drop=True)
+
+nav_return_samples = {window: [] for window in WINDOWS}
+nav_return_stats = {window: None for window in WINDOWS}
 
 print("="*80)
 print("溢价率数据分析报告")
@@ -63,10 +70,48 @@ if len(high_premium_indices) > 0:
             subsequent_drop_count += 1
             subsequent_drop_avg.append(drop_rate)
 
+        # 统计溢价高位后的净值涨跌幅（5/10/20日）
+        start_nav = df.loc[idx, 'nav']
+        if pd.notna(start_nav) and start_nav != 0:
+            for window in WINDOWS:
+                future_idx = idx + window
+                if future_idx < len(df):
+                    end_nav = df.loc[future_idx, 'nav']
+                    if pd.notna(end_nav):
+                        nav_return_samples[window].append((end_nav / start_nav - 1) * 100)
+
     if subsequent_drop_avg:
         avg_drop_rate = np.mean(subsequent_drop_avg)
         print(f"在19%溢价卖出后，后续溢价下跌的平均概率: {avg_drop_rate:.2f}%")
         print(f"统计样本数: {subsequent_drop_count}次")
+
+    print("\n溢价率 >= 19% 后基金净值表现:")
+    for window in WINDOWS:
+        returns = nav_return_samples[window]
+        if returns:
+            sample_size = len(returns)
+            drop_prob = sum(ret < 0 for ret in returns) / sample_size * 100
+            avg_return = np.mean(returns)
+            median_return = np.median(returns)
+            min_return = np.min(returns)
+            max_return = np.max(returns)
+
+            nav_return_stats[window] = {
+                'sample_size': sample_size,
+                'drop_prob': drop_prob,
+                'avg_return': avg_return,
+                'median_return': median_return,
+                'min_return': min_return,
+                'max_return': max_return,
+            }
+
+            print(
+                f"{window}日: 样本 {sample_size} 次, 下跌概率 {drop_prob:.2f}%, "
+                f"平均涨跌幅 {avg_return:.2f}%, 中位数 {median_return:.2f}%, "
+                f"最佳/最差 {max_return:.2f}% / {min_return:.2f}%"
+            )
+        else:
+            print(f"{window}日: 数据不足")
 
 # 按5个百分点分段统计溢价持续时间
 print("\n" + "="*80)
@@ -223,12 +268,28 @@ if len(premium_19_plus) > 0:
 print("\n" + "="*80)
 print("卖出建议")
 print("="*80)
+
+if any(nav_return_stats.values()):
+    nav_lines = ["2. 高溢价卖出后基金净值表现:"]
+    for window in WINDOWS:
+        stats = nav_return_stats.get(window)
+        if stats:
+            nav_lines.append(
+                f"   - {window}日: 下跌概率 {stats['drop_prob']:.2f}% (样本 {stats['sample_size']} 次), "
+                f"平均涨跌幅 {stats['avg_return']:.2f}%"
+            )
+        else:
+            nav_lines.append(f"   - {window}日: 数据不足")
+    nav_block = "\n".join(nav_lines)
+else:
+    nav_block = "2. 当前数据不足以评估高溢价后的基金净值表现"
+
 print(f"""
 当前溢价率: {df.iloc[-1]['premium']:.2f}%
 
 分析结论:
 1. 历史数据显示,溢价率 >= 19% 的情况较少出现,属于高溢价状态
-2. 在19%溢价卖出后,平均有较大概率溢价会下跌(回归到历史平均水平)
+{nav_block}
 3. 建议根据个人风险偏好决策:
    - 保守策略: 在19%-20%溢价率时考虑卖出,锁定收益
    - 平衡策略: 在溢价率超过15%时分批卖出
