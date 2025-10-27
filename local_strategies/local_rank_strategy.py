@@ -14,6 +14,7 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
+from pathlib import Path
 
 
 @dataclass
@@ -359,18 +360,19 @@ class LocalRankStrategy:
             for etf_code, detail in self.daily_score_details.items():
                 etf_name = self.etf_config[etf_code]['name']
                 history_record[f'{etf_name}_综合得分'] = detail.combined_score
-                history_record[f'{etf_name}_长周期原始得分'] = detail.long_term_raw
-                history_record[f'{etf_name}_长周期Sigmoid'] = detail.long_term_sigmoid
-                history_record[f'{etf_name}_短周期原始得分'] = detail.short_term_raw
-                history_record[f'{etf_name}_短周期Sigmoid'] = detail.short_term_sigmoid
-                history_record[f'{etf_name}_年化收益率'] = detail.annualized_returns
-                history_record[f'{etf_name}_R平方'] = detail.r_squared
-                history_record[f'{etf_name}_长周期斜率'] = detail.long_term_slope
-                history_record[f'{etf_name}_短周期斜率'] = detail.short_term_slope
-                history_record[f'{etf_name}_长周期起始净值'] = detail.long_start_price
+                history_record[f'{etf_name}_收盘价'] = self.get_current_price(etf_code, date)
+                # history_record[f'{etf_name}_长周期原始得分'] = detail.long_term_raw
+                # history_record[f'{etf_name}_长周期Sigmoid'] = detail.long_term_sigmoid
+                # history_record[f'{etf_name}_短周期原始得分'] = detail.short_term_raw
+                # history_record[f'{etf_name}_短周期Sigmoid'] = detail.short_term_sigmoid
+                # history_record[f'{etf_name}_年化收益率'] = detail.annualized_returns
+                # history_record[f'{etf_name}_R平方'] = detail.r_squared
+                # history_record[f'{etf_name}_长周期斜率'] = detail.long_term_slope
+                # history_record[f'{etf_name}_短周期斜率'] = detail.short_term_slope
+                # history_record[f'{etf_name}_长周期起始净值'] = detail.long_start_price
                 history_record[f'{etf_name}_长周期结束净值'] = detail.long_end_price
-                history_record[f'{etf_name}_短周期起始净值'] = detail.short_start_price
-                history_record[f'{etf_name}_短周期结束净值'] = detail.short_end_price
+                # history_record[f'{etf_name}_短周期起始净值'] = detail.short_start_price
+                # history_record[f'{etf_name}_短周期结束净值'] = detail.short_end_price
 
             self.portfolio['history'].append(history_record)
 
@@ -463,12 +465,14 @@ class LocalRankStrategy:
                 export_df[column] = pd.to_numeric(export_df[column], errors='coerce').round(6)
             elif column.endswith(('年化收益率', 'R平方', '长周期斜率', '短周期斜率')):
                 export_df[column] = pd.to_numeric(export_df[column], errors='coerce').round(6)
-            elif column.endswith('净值'):
+            elif column.endswith(('净值', '收盘价')):
                 export_df[column] = pd.to_numeric(export_df[column], errors='coerce').round(4)
 
         results_path = os.path.join(self.output_dir, 'rank_backtest_results.csv')
         export_df.to_csv(results_path, index=False, encoding='utf-8-sig')
         print(f"\n详细结果已保存到: {results_path}")
+
+        self.export_latest_score_markdown(history_df)
 
         if self.portfolio['trades']:
             trades_df = pd.DataFrame(self.portfolio['trades'])
@@ -476,6 +480,68 @@ class LocalRankStrategy:
             trades_df.to_csv(trades_path, index=False, encoding='utf-8-sig')
             print(f"交易记录已保存到: {trades_path}")
             print(f"共记录 {len(trades_df)} 笔交易")
+
+
+    def export_latest_score_markdown(self, history_df: pd.DataFrame) -> None:
+        if not self.daily_scores or not self.daily_score_details:
+            return
+
+        latest_date = history_df['date'].iloc[-1]
+        latest_date_str = (
+            latest_date.strftime('%Y-%m-%d') if hasattr(latest_date, 'strftime') else str(latest_date)
+        )
+
+        ranked_etfs = sorted(self.daily_scores.items(), key=lambda item: item[1], reverse=True)
+        if not ranked_etfs:
+            return
+
+        lines: list[str] = []
+        lines.append(f"# {latest_date_str} 打分说明")
+        lines.append("")
+        lines.append(
+            "策略使用 25 日长周期动量与 3 日短周期趋势 Sigmoid 加权的乘积作为综合得分；当两项原始分值都为负时会反转符号。下面给出两只 ETF 的指标明细。"
+        )
+        lines.append("")
+
+        for etf_code, _ in ranked_etfs:
+            if etf_code not in self.daily_score_details:
+                continue
+            detail = self.daily_score_details[etf_code]
+            name = self.etf_config[etf_code]['name']
+
+            lines.append(f"## {name}({etf_code})")
+            lines.append("")
+            lines.append("| 指标 | 数值 |")
+            lines.append("| --- | --- |")
+            lines.append(f"| 综合得分 | {detail.combined_score:.6f} |")
+            lines.append(f"| 长周期原始分数 (年化收益×R²) | {detail.long_term_raw:.6f} |")
+            lines.append(f"| 长周期 Sigmoid | {detail.long_term_sigmoid:.6f} |")
+            lines.append(f"| 短周期原始分数 (斜率) | {detail.short_term_raw:.6f} |")
+            lines.append(f"| 短周期 Sigmoid | {detail.short_term_sigmoid:.6f} |")
+            lines.append(f"| 25 日回归斜率 | {detail.long_term_slope:.6f} |")
+            lines.append(f"| 25 日窗口起始净值 | {detail.long_start_price:.4f} |")
+            lines.append(f"| 25 日窗口结束净值 | {detail.long_end_price:.4f} |")
+            lines.append(f"| 3 日回归斜率 | {detail.short_term_slope:.6f} |")
+            lines.append(f"| 3 日窗口起始净值 | {detail.short_start_price:.4f} |")
+            lines.append(f"| 3 日窗口结束净值 | {detail.short_end_price:.4f} |")
+            lines.append(f"| 年化收益率 | {detail.annualized_returns:.6f} |")
+            lines.append(f"| R² | {detail.r_squared:.6f} |")
+            lines.append("")
+
+            explanation = (
+                f"综合得分 = 长周期 Sigmoid × 短周期 Sigmoid = {detail.long_term_sigmoid:.6f} × "
+                f"{detail.short_term_sigmoid:.6f} ≈ {detail.combined_score:.6f}。"
+                f"长周期原始分数为 {detail.long_term_raw:.6f}，其来源是 25 日对数价格回归斜率 {detail.long_term_slope:.6f}"
+                f" 对应的年化收益 {detail.annualized_returns:.6f}，乘以 R² {detail.r_squared:.6f} 后得到。"
+                f" 短周期原始分数是最近 3 日斜率 {detail.short_term_slope:.6f}，Sigmoid 后得到 {detail.short_term_sigmoid:.6f}。"
+            )
+            lines.append(explanation)
+            lines.append("")
+
+        output_path = Path(self.output_dir) / 'latest_score_explanation.md'
+        output_path.write_text('\n'.join(lines), encoding='utf-8')
+        print(f"最新评分说明已导出: {output_path}")
+
 
 
 def main() -> None:
